@@ -1,39 +1,37 @@
-# KataSymbol E10 — client Python
+# KataSymbol E10 — Python client
 
-Client Python autonomo per pilotare la stampante BLE per etichette termiche
-**Katasymbol E10** (`printerType=15`, famiglia firmware T15) da Mac o Linux,
-senza l'app ufficiale Android.
+Standalone Python client to drive the **Katasymbol E10** BLE thermal label
+printer (`printerType=15`, T15 firmware family) from a Mac or Linux box,
+without the official Android app.
 
-Il protocollo è stato ricavato per reverse engineering dell'app
-`com.supvan.katasymbol` v1.4.21 e verificato byte-per-byte su hardware reale
-(unit `T0131F2408286248`).
+> Unofficial project. Not affiliated with Supvan / Katasymbol.
 
-> Progetto non ufficiale. Nessuna affiliazione con Supvan / Katasymbol.
+## Features
 
-## Cosa fa
+- BLE discovery filtered against the known E10 serial allowlist (75 entries)
+- `MSTA` / `FSTA` status register read (busy, cover open, label end, …)
+- PNG / JPEG image printing
+- Text rendering and printing in a single command
+- Optional rectangular border around rendered text (`--box`)
+- Concentration 1–7 and multi-copy
+- Full raster → pre-LZMA buffer → LZMA-Alone → DMA pipeline (506-byte
+  chunks wrapped in a 512-byte envelope, then split into 4×128-byte BLE
+  writes with 50 ms inter-write delay — matches what the Android app sends)
 
-- Discovery BLE filtrato sui seriali E10 noti (allowlist di 75 nomi)
-- Lettura registri stato `MSTA` / `FSTA` (busy, cover open, label end, …)
-- Stampa di immagini PNG/JPEG o di testo renderizzato al volo
-- Cornice opzionale intorno al testo (`--box`)
-- Concentrazione 1–7 e copie multiple
-- Pipeline raster → pre-LZMA buffer → compressione LZMA-Alone → trasferimento
-  DMA in chunk da 506 byte con envelope a 4×128 byte
+## Hardware supported
 
-## Hardware supportato
+- **Katasymbol E10** (direct thermal, BLE only)
+- 96-dot head (203 dpi), 12 bytes per column
+- Concentration 1–7, copies 1–100
+- T15 / Series 2 firmware
 
-- **Katasymbol E10** (etichette termiche dirette, BLE only)
-- Testa 96 dot (203 dpi), 12 byte/colonna
-- Concentrazione 1–7, copie 1–100
-- Firmware T15 / Series 2
+The 75 known serials are listed in `katasym/constants.py`. If your printer's
+serial is outside that allowlist, `katasym scan` will not show it — pass
+`--all` to see every BLE device and use the address manually.
 
-I 75 seriali noti sono nell'allowlist di `katasym/constants.py`. Se la tua
-stampante ha un seriale fuori lista la scan non la mostrerà — passa
-`--all` a `katasym scan` per vederla comunque e usa l'indirizzo manualmente.
+## Install
 
-## Installazione
-
-### Con [uv](https://github.com/astral-sh/uv) (consigliato)
+### With [uv](https://github.com/astral-sh/uv) (recommended)
 
 ```bash
 git clone https://github.com/Giorgiofox/KataSymbol_E10_Python.git
@@ -41,7 +39,7 @@ cd KataSymbol_E10_Python
 uv sync
 ```
 
-### Con pip
+### With pip
 
 ```bash
 git clone https://github.com/Giorgiofox/KataSymbol_E10_Python.git
@@ -51,9 +49,9 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-Dipendenze runtime: `bleak >= 0.22`, `pillow >= 10`. Python ≥ 3.10.
+Runtime dependencies: `bleak >= 0.22`, `pillow >= 10`. Python ≥ 3.10.
 
-## Uso
+## Usage
 
 ### Discovery
 
@@ -61,73 +59,71 @@ Dipendenze runtime: `bleak >= 0.22`, `pillow >= 10`. Python ≥ 3.10.
 uv run katasym scan
 ```
 
-Mostra tutte le E10 raggiungibili con RSSI. Esempio output:
+Lists every reachable E10 with its RSSI. Sample output:
 
 ```
-  6C5A5C1B-1B17-DB3B-626B-3ABAD6C3A5AB   -46 dBm  E10 T0131       raw='T0131F2408286248'
+  <BLE-UUID-or-MAC>   -46 dBm  E10 T00XX       raw='T00XX<serial-tail>'
 ```
 
-Su macOS l'indirizzo è uno UUID di CoreBluetooth, non un MAC reale.
-Su Linux è un MAC standard.
+On macOS the address is a CoreBluetooth UUID, not a real MAC. On Linux it
+is a standard MAC.
 
-### Stato stampante
+### Printer status
 
 ```bash
 uv run katasym status
 ```
 
-L'indirizzo è opzionale: se omesso, viene fatto uno scan rapido e usata la
-prima E10 trovata. Vale per tutti i comandi.
-
-Per puntare a una stampante specifica:
+`--address` is optional on every subcommand. When omitted, a quick scan runs
+and the first matching E10 is used. To target a specific printer:
 
 ```bash
-uv run katasym status --address 6C5A5C1B-1B17-DB3B-626B-3ABAD6C3A5AB
+uv run katasym status --address <BLE-UUID-or-MAC>
 ```
 
-### Stampa di testo
+### Print text
 
 ```bash
-uv run katasym print --text "Ciao mondo"
-uv run katasym print --text "Ciao mondo" --concentration 7 --copies 2
-uv run katasym print --text "Ciao mondo" --box
+uv run katasym print --text "Hello E10"
+uv run katasym print --text "Hello E10" --concentration 7 --copies 2
+uv run katasym print --text "Hello E10" --box
 ```
 
-Opzioni rilevanti:
+Relevant flags:
 
-| Flag | Default | Significato |
+| Flag | Default | Meaning |
 |---|---|---|
-| `--text "..."` | — | testo da renderizzare (alternativo a `--image`) |
-| `--image FILE` | — | percorso PNG / JPEG |
-| `--font-size N` | 56 | dimensione font per `--text` |
-| `--concentration N` | 4 | densità testa termica 1–7 (più alta = più scuro) |
-| `--copies N` | 1 | numero di copie |
-| `--threshold N` | 125 | soglia per binarizzare il bitmap (0–255) |
-| `--box` | off | cornice rettangolare intorno al testo |
-| `--address ADDR` | auto | indirizzo BLE; auto-scan se assente |
+| `--text "..."` | — | text to render (mutually exclusive with `--image`) |
+| `--image FILE` | — | PNG / JPEG file path |
+| `--font-size N` | 56 | font size used with `--text` |
+| `--concentration N` | 4 | thermal head density 1–7 (higher = darker) |
+| `--copies N` | 1 | number of copies |
+| `--threshold N` | 125 | bitmap binarization threshold (0–255) |
+| `--box` | off | draw a rectangular border around the rendered text |
+| `--address ADDR` | auto | BLE address; auto-scan if omitted |
 
-### Stampa di immagini
+### Print an image
 
 ```bash
 uv run katasym print --image label.png --concentration 6
 ```
 
-L'immagine viene centrata su un canvas alto 96 dot (= altezza testa);
-la larghezza del canvas determina la lunghezza dell'etichetta stampata.
-Per risultati prevedibili, fornire un PNG già alto 96 px.
+The input image is centered on a 96-dot-tall canvas (= head width); the
+canvas width determines the printed label length. For predictable output,
+supply a PNG that is already 96 px tall.
 
-### Diagnostica BLE
+### BLE diagnostics
 
 ```bash
 uv run katasym diag
 ```
 
-Esegue un dump completo di servizi e caratteristiche GATT, si iscrive a
-tutte le caratteristiche notify e prova inquiry con vari opcode (`0x11`,
-`0x13`, `0xC5`) su tutte le caratteristiche write. Utile se la stampante
-non risponde: aiuta a capire dove il firmware ha cambiato qualcosa.
+Dumps every service / characteristic in the GATT tree, subscribes to all
+notify characteristics, and probes inquiry with several opcodes (`0x11`,
+`0x13`, `0xC5`) on every writable characteristic. Useful if the printer
+stops responding — helps locate firmware-side changes.
 
-## Esempio programmatico
+## Programmatic example
 
 ```python
 import asyncio
@@ -146,73 +142,62 @@ async def main():
 asyncio.run(main())
 ```
 
-Vedi `examples/print_text.py` per uno script completo.
+See `examples/print_text.py` for a complete script.
 
-## Architettura del client
+## Client layout
 
 ```
 katasym/
-  constants.py   Opcode, UUID GATT, parametri E10, lista seriali
-  frame.py       Builder dei frame comando (16 byte) + chunk DMA (506 byte)
-                 + envelope outer 512 byte + split BLE 4×128
-  raster.py      PIL bitmap → stream 1bpp column-major (LSB = top)
+  constants.py   Opcodes, GATT UUIDs, E10 parameters, serial allowlist
+  frame.py       Command frame builder (16 B) + DMA chunk (506 B)
+                 + outer envelope (512 B) + 4×128 BLE split
+  raster.py      PIL bitmap → 1bpp column-major stream (LSB = top dot)
   page.py        Pre-LZMA buffer header + PAGE_REG_BITS encoding
-  compress.py    Wrapper LZMA-Alone con parametri (dict 8192, lc=3, pb=2, …)
-  status.py      Decoder MSTA / FSTA
-  ble.py         Trasporto bleak (scan, connect, write, notify queue)
-  protocol.py    Macchina a stati di stampa end-to-end
-  cli.py         CLI argparse (scan / status / diag / print)
+  compress.py    LZMA-Alone wrapper (dict 8192, lc=3, pb=2, …)
+  status.py      MSTA / FSTA decoder
+  ble.py         bleak transport (scan, connect, write, notify queue)
+  protocol.py    End-to-end print state machine
+  cli.py         argparse CLI (scan / status / diag / print)
 ```
 
-## Note di protocollo
+## Protocol notes
 
-- **Servizio GATT**: `0000e0ff-3c17-d293-8e48-14fe2e4da212`
+- **GATT service**: `0000e0ff-3c17-d293-8e48-14fe2e4da212`
 - **Write char**: `0000ffe9-…` (write + write-without-response)
 - **Notify char**: `0000ffe1-…` (notify + write)
-- **MTU**: 240 (negoziato; macOS può andare più basso)
-- **Frame comando**: 16 byte fissi, `7E 5A LL 00 10 01 AA OP CS_LE16 [param 6B]`
-- **Densità**: opcode `0xC9`, valore = `int(((conc-1)/10 + 0.8) * 100)` →
-  80/90/100/110/120/130/140 per concentrazione 1–7
+- **MTU**: 240 (negotiated; macOS may cap lower)
+- **Command frame**: fixed 16 bytes, `7E 5A LL 00 10 01 AA OP CS_LE16 [6-byte param]`
+- **Density**: opcode `0xC9`, wire value = `int(((conc-1)/10 + 0.8) * 100)` →
+  80/90/100/110/120/130/140 for concentration 1–7
 - **Start print**: opcode `0x13`
-- **Bulk transfer**: opcode `0x5C` con `[page_size LE16][num_chunks LE16]`,
-  seguito da N chunk DMA di 506 byte ciascuno (header `AA BB cs idx tot` +
-  500 byte LZMA)
-- **Envelope chunk per BLE**: ogni chunk DMA viene incapsulato in 512 byte
-  `7E 5A FC 01 10 02 + 506B` e splittato in 4 BLE write da 128 byte con
-  50 ms di delay
-- **Buf full**: opcode `0x10` dopo l'ultimo chunk
+- **Bulk transfer**: opcode `0x5C` with `[page_size LE16][num_chunks LE16]`,
+  followed by N DMA chunks of 506 bytes each (`AA BB cs idx tot` + 500 LZMA
+  bytes)
+- **BLE chunk envelope**: each 506-byte DMA chunk is wrapped in a 512-byte
+  `7E 5A FC 01 10 02 + chunk` envelope and split into 4×128-byte BLE writes
+  with a 50 ms delay between writes
+- **Buf full**: opcode `0x10` after the last chunk
 
-LZMA stream è in formato `.lzma` (LZMA-Alone): 5 byte properties header +
-8 byte LE64 size + payload. Parametri: `dict_size=8192`, `lc=3`, `lp=0`,
-`pb=2`, `nice_len=128`.
+The LZMA stream is the classic `.lzma` (LZMA-Alone) container: 5-byte
+properties header + 8-byte LE64 size + payload. Parameters: `dict_size=8192`,
+`lc=3`, `lp=0`, `pb=2`, `nice_len=128`.
 
-## Limiti noti
+## Known limits
 
-- Testato solo su `T0131F2408286248` (firmware Series 2). Altri sub-modelli
-  potrebbero richiedere tuning di `dict_size`, `mat_shift` o opcode.
-- Su macOS gli indirizzi sono UUID CoreBluetooth — rotano nel tempo; basta
-  ri-scannerizzare.
-- Stampa di immagini molto larghe (> 332 colonne) non testata: il codice
-  segue un path single-frame e dovrebbe funzionare, ma manca conferma.
-- Auth challenge opzionali (`CMD_READ_RANDOM = 0xD5`,
-  `CMD_VERIFY_RANDOM = 0xD6`) non implementati — non sono necessari sulla
-  unit di test, ma esistono in altre revisioni firmware.
+- Tested on Series 2 firmware. Other sub-models may need tuning of
+  `dict_size`, `mat_shift`, or opcodes.
+- macOS addresses are CoreBluetooth UUIDs — they rotate over time; just
+  re-scan when one stops resolving.
+- Very wide labels (> 332 columns) follow a multi-frame path in the
+  original app; this client implements the single-frame path only and has
+  not been validated for the wider case.
+- Optional auth challenges (`CMD_READ_RANDOM = 0xD5`,
+  `CMD_VERIFY_RANDOM = 0xD6`) are not implemented — not required on the
+  test unit, but present in other firmware revisions.
 
-## Reverse engineering — credits
+## License
 
-Il protocollo è stato ricavato decompilando con
-[jadx](https://github.com/skylot/jadx) l'app Android `com.supvan.katasymbol`
-v1.4.21 estratta da APKPure. Il riferimento Java principale è
-`com/fhit/app_iprinter/communication/print/T15Print.java`.
+MIT — see [`LICENSE`](LICENSE).
 
-Tutte le scelte di byte ordering, lunghezza frame, checksum e parametri LZMA
-nel codice riportano il riferimento alla riga Java corrispondente nei
-commenti.
-
-## Licenza
-
-MIT — vedi [`LICENSE`](LICENSE).
-
-Questo client è materiale di reverse engineering a scopo di interoperabilità
-con hardware acquistato legalmente. Non sono inclusi né binari, né asset, né
-codice originale dell'app o del firmware.
+This client is intended for interoperability with hardware bought legally.
+No firmware, app binaries, or proprietary assets are included.
